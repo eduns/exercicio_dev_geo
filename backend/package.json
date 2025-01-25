@@ -1,0 +1,35 @@
+{
+	"name": "backend",
+	"version": "1.0.0",
+	"main": "index.ts",
+	"type": "module",
+	"scripts": {
+		"start:dev": "tsx watch --env-file=.env src/app/index.ts",
+		"lint": "eslint --fix-dry-run .",
+		"lint:check": "prettier --check **/*.{js,mjs,ts}",
+		"test": "jest"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"description": "",
+	"devDependencies": {
+		"@eslint/js": "^9.19.0",
+		"@stylistic/eslint-plugin": "^2.13.0",
+		"@types/cors": "^2.8.17",
+		"@types/express": "^5.0.0",
+		"eslint": "^9.19.0",
+		"eslint-config": "^0.3.0",
+		"eslint-config-prettier": "^10.0.1",
+		"globals": "^15.14.0",
+		"jest": "^29.7.0",
+		"prettier": "^3.4.2",
+		"tsx": "^4.19.2",
+		"typescript": "^5.7.3",
+		"typescript-eslint": "^8.21.0"
+	},
+	"dependencies": {
+		"cors": "^2.8.5",
+		"express": "^4.21.2"
+	}
+}
