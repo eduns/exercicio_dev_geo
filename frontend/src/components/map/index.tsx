@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { MapContainer, TileLayer, FeatureGroup, Marker, Popup, useMap } from 'react-leaflet';
-import { type DrawEvents, Icon, LatLng, Popup as LPopup, Polygon, Marker as LMarker, Layer, Map as LMap } from 'leaflet';
+import { MapContainer, TileLayer, FeatureGroup, Marker, Popup, Polygon, useMap } from 'react-leaflet';
+import { type DrawEvents, Icon, LatLng, Popup as LPopup, Polygon as LPolygon, Layer, Map as LMap } from 'leaflet';
 import { EditControl } from 'react-leaflet-draw';
 
 import customIcon1 from '../../assets/marker_01.png';
@@ -9,35 +9,29 @@ import customIcon3 from '../../assets/marker_03.png';
 import markerShadow from '../../assets/marker-shadow.png';
 import pinPolygon from '../../assets/pin-polygon.png';
 
-import censoPoints from '../../../../files/base_jales_separado_virgula.csv?raw';
-
 import './index.css';
 
 type PolygonData = {
   id: number;
   pins: { lat: number; lng: number; }[];
   area: number;
-  iconStr: string;
-}
-
-type PointData = {
-  lat: number;
-  lng: number;
-  iconStr: string;
+  iconName: string;
 }
 
 type MarkerData = {
   lat: number;
   lng: number;
-  icon: Icon;
-  iconStr: string;
-  domicilioParticularCounts: number;
+  iconName: string;
+  domicilioParticularCount: number;
+  info?: string;
+  isPolygon: boolean;
+  polygonCoordinates: { lat: number; lng: number }[]
 }
 
 type LayerData = {
   layer: Layer,
   isShown: boolean;
-  icon: string;
+  iconName: string;
 }
 
 const customIcons: {
@@ -81,34 +75,54 @@ const customIcons: {
   })
 };
 
+const fetchData = async (coordinates: { lat: number; lng: number; }) => {
+  return fetch(`${process.env.VITE_APP_API_URL}/osm/info?lat=${coordinates.lat}&lng=${coordinates.lng}`, {
+    headers: {
+      'Content-Type': 'application/json;charset=UTF-8'
+    }
+  })
+    .then(response => response.json())
+    .catch(console.error);
+}
+
+const fetchPoints = async () => {
+  return fetch(`${process.env.VITE_APP_API_URL}/osm/points`,
+    {
+      headers: {
+        'Content-Type': 'application/json;charset=UTF-8'
+      },
+    }
+  )
+    .then(response => response.json())
+    .catch(console.error);
+}
+
+const insertPoint = (point: any) => {
+  fetch(`${process.env.VITE_APP_API_URL}/osm/points`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json;charset=UTF-8'
+    },
+    body: JSON.stringify(point)
+  })
+  .catch(console.error);
+}
+
 export default function Map() {
   const [markers, setMarkers] = useState<MarkerData[]>([]);
-  const [pointsFromFile, setPointsFromFile] = useState<{
-    lat: number,
-    lng: number,
-    estabelecimentoFinalidadesCount: number,
-    domicilioParticularCount: number,
-    estabelecimentoConstrucaoCount: number,
-    estabelecimentoReligiosoCount: number,
-    estabelecimentoEnsinoCount: number,
-    estabelecimentoSaudeCount: number,
-    domicilioColetivoCount: number,
-    estabelecimentoAgroCount: number,
-  }[]>([]);
   const [polygons, setPolygons] = useState<PolygonData[]>([]);
-  const intervalRef = useRef<number>(null);
-  const currentPointIdxRef = useRef(0);
-  const [selectedIcon, setSelectedIcon] = useState<string>('customIcon1');
   const [selectedMarkerTypes, setSelectedMarkerTypes] = useState<string[]>([
     'customIcon1', 'customIcon2', 'customIcon3'
   ]);
   const [mapLayers, setMapLayers] = useState<LayerData[]>([]);
   const mapRef = useRef<LMap>(null);
-
+  
   const [average, setAverage] = useState<number>(0);
   const [median, setMedian] = useState<number>(0);
   const [areaSum, setAreaSum] = useState<number>(0);
   const [totalPoints, setTotalPoints] = useState<number>(0);
+  const [selectedIconName, setSelectedIconName] = useState<string>('customIcon1');
+  const selectedIconNameRef = useRef<string>(selectedIconName);
 
   const calcPolygonArea = (coordinates: { lat: number; lng: number }[]) => {
     const area = coordinates.reduce((prev, curr, idx) => {
@@ -140,12 +154,47 @@ export default function Map() {
     return values[middle];
   };
   
-  const onCreated = (evt: DrawEvents.Created) => {
-    evt.layer.bindPopup(new LPopup({ content: 'TESTE' }));
+  const onCreated = async (evt: DrawEvents.Created) => {
+    const layer = evt.layer as any;
+    const isPoint = !!layer._latlng;
+    
+    if (isPoint) {
+      const coordinates = (evt.layer as any)._latlng;
+      
+      const data = await fetchData(coordinates);
+
+      if (data) {
+        data.display_name && evt.layer.bindPopup(new LPopup({ content: `
+          <h2>Dados</h2>
+          <hr />
+          <p>${data.display_name}</p>
+        `}));
+      }
+
+      insertPoint({
+        lat: coordinates.lat,
+        lng: coordinates.lng,
+        info: data?.display_name || null,
+        iconName: selectedIconNameRef.current
+      });
+    } else {
+      evt.layer.bindPopup(new LPopup({ content: 'TESTE' }));
+
+      const [polygonLatLngs] = layer._latlngs;
+
+      insertPoint({
+        isPolygon: true,
+        iconName: 'polygonPin',
+        polygonCoordinates: polygonLatLngs
+      })
+    }
   }
   
   const onIconChange = (evt: any) => {
-    setSelectedIcon(evt.target.value);
+    setSelectedIconName(() => {
+      selectedIconNameRef.current = evt.target.value;
+      return evt.target.value;
+    });
   }
 
   const onMarkerTypesChange = (evt: any) => {
@@ -153,75 +202,41 @@ export default function Map() {
   }
   
   useEffect(() => {
-    const parsedPoints = censoPoints.split('\n').slice(1, 101).filter((v) => v !== '').map(s => {
-      const [
-        lat,
-        lng,
-        estabelecimentoFinalidadesCount,
-        domicilioParticularCount,
-        estabelecimentoConstrucaoCount,
-        estabelecimentoReligiosoCount,
-        estabelecimentoEnsinoCount,
-        estabelecimentoSaudeCount,
-        domicilioColetivoCount,
-        estabelecimentoAgroCount,
-      ] = s.split(',');
-  
-      return {
-        lat: parseFloat(lat),
-        lng: parseFloat(lng),
-        estabelecimentoFinalidadesCount: parseInt(estabelecimentoFinalidadesCount),
-        domicilioParticularCount: parseInt(domicilioParticularCount),
-        estabelecimentoConstrucaoCount: parseInt(estabelecimentoConstrucaoCount),
-        estabelecimentoReligiosoCount: parseInt(estabelecimentoReligiosoCount),
-        estabelecimentoEnsinoCount: parseInt(estabelecimentoEnsinoCount),
-        estabelecimentoSaudeCount: parseInt(estabelecimentoSaudeCount),
-        domicilioColetivoCount: parseInt(domicilioColetivoCount),
-        estabelecimentoAgroCount: parseInt(estabelecimentoAgroCount),
-      }
-    });
-  
-    setPointsFromFile(parsedPoints);
+    try {
+      fetchPoints()
+        .then(allPoints => {
+          setMarkers(
+            allPoints.map((p: any) => {
+              return {
+                lat: p.lat,
+                lng: p.lng,
+                iconName: p.iconName,
+                info: p.info,
+                isPolygon: !!p.isPolygon,
+                ...(!p.isPolygon && { domicilioParticularCount: p.domicilioParticularCount }),
+                ...(p.isPolygon && { polygonCoordinates: p.polygonCoordinates.split('|').map((pc: any) => {
+                  const [lat, lng] = pc.split(',');
+    
+                  return {
+                    lat: parseFloat(lat),
+                    lng: parseFloat(lng)
+                  }
+                })})
+              }
+            })
+          )
+        })
+        .catch(console.error);
+
+    } catch (error) {
+      console.log('[FETCH_POINTS] Erro:', error);
+    }
   }, []);
-  
-  useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      if (currentPointIdxRef.current < pointsFromFile.length) {
-        const point = pointsFromFile[currentPointIdxRef.current];
-        console.log(`| Marcador ${currentPointIdxRef.current + 1} |`);
-
-        setMarkers(storedMarkers => {
-          return [
-            ...storedMarkers,
-            {
-              lat: point.lat,
-              lng: point.lng,
-              icon: customIcons[selectedIcon],
-              iconStr: selectedIcon,
-              domicilioParticularCounts: point.domicilioParticularCount
-            }
-          ]
-        });
-
-        currentPointIdxRef.current += 1;
-      } else {
-        console.log('| Stop executing |');
-        clearInterval(intervalRef.current as number);
-        intervalRef.current = null;
-      }
-    }, 30);
-
-    return () => {
-      if (intervalRef.current !== null) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [pointsFromFile]);
 
   useEffect(() => {
-    const mapLayerCount = mapLayers.reduce((prev, curr, idx) => {
+    const mapLayerCount = mapLayers.reduce((prev, curr) => {
       const layer = (curr.layer as any);
-      const isPolygon = !!layer._latlngs; console.log(idx);
+      const isPolygon = !!layer._latlngs;
 
       return prev + (isPolygon ? layer._latlngs[0].length : 1);
     }, 0);
@@ -237,7 +252,7 @@ export default function Map() {
         const isPoint = !!(ml.layer as any)._latlng;
   
         if (isPoint) {
-          if (!selectedMarkerTypes.includes(ml.icon)) {
+          if (!selectedMarkerTypes.includes(ml.iconName)) {
             ml.isShown && mapRef.current!.removeLayer(ml.layer);
             ml.isShown = false;
           } else {
@@ -277,14 +292,14 @@ export default function Map() {
 
             if (isPolygon) {
               setPolygons(storedPolygons => {
-                const polygonLatLngs = (layer as Polygon).getLatLngs()[0] as LatLng[];
+                const polygonLatLngs = (layer as LPolygon).getLatLngs()[0] as LatLng[];
         
                 return [
                   ...storedPolygons, {
+                    id: layer._leaflet_id,
                     pins: polygonLatLngs,
                     area: calcPolygonArea(polygonLatLngs),
-                    iconStr: selectedIcon,
-                    id: layer._leaflet_id
+                    iconName: 'pinPolygon',
                   }
                 ];
               });
@@ -293,14 +308,14 @@ export default function Map() {
             setMapLayers(storedMapLayers => [...storedMapLayers, {
               layer: evt.layer,
               isShown: true,
-              icon: selectedIcon
+              iconName: selectedIconNameRef.current
             }]);
           },
           layerremove: (evt) => {
             const layer = (evt.layer as any);
             const isPolygon = !!layer._latlngs;
 
-            if (isPolygon) { // polygon
+            if (isPolygon) {
               setPolygons(storedPolygons => {
                 const remainingPolygons = storedPolygons.filter((p) => p.id !== layer._leaflet_id);
       
@@ -325,7 +340,7 @@ export default function Map() {
             polyline: false,
             circlemarker: false,
             marker: {
-              icon: customIcons[selectedIcon]
+              icon: customIcons[selectedIconName]
             },
             polygon: {
               allowIntersection: false,
@@ -343,16 +358,37 @@ export default function Map() {
           }}
         />
         {markers.map((marker, idx) => (
-          <Marker
-            key={idx}
-            position={[marker.lat, marker.lng]}
-            icon={marker.icon}
-          >
-            <Popup>
-              <h3>Total Domicílios:</h3>{marker.domicilioParticularCounts}
-              <hr />
-            </Popup>
-          </Marker>
+          marker.isPolygon ? (
+            <Polygon
+              key={idx}
+              positions={marker.polygonCoordinates.map(pc => [pc.lat, pc.lng])}
+              color='#97009c'
+            >
+              <Popup>
+                TESTE
+              </Popup>
+            </Polygon>
+          ) : (
+            <Marker
+              key={idx}
+              position={[marker.lat, marker.lng]}
+              icon={customIcons[marker.iconName]}
+            >
+              {marker.domicilioParticularCount && (
+                <Popup>
+                  <p><b>Total de Domicílios:</b> {marker.domicilioParticularCount}</p>
+                  <hr />
+                </Popup>
+              )}
+              {marker.info && (
+                <Popup>
+                  <h2>Dados</h2>
+                  <hr />
+                  <p>{marker.info}</p>
+                </Popup>
+              )}
+            </Marker>
+          )
         ))}
         <IconMapFilter />
       </FeatureGroup>
@@ -367,7 +403,7 @@ export default function Map() {
     </div>
     <div id="selector-box">
       <label htmlFor="selectedIcon">Selecione um ícone do marcador: </label>
-      <select name="sectedIcon" value={selectedIcon} onChange={onIconChange}>
+      <select name="selectedIcon" value={selectedIconName} onChange={onIconChange}>
         <option value="customIcon1">Ícone 1</option>
         <option value="customIcon2">Ícone 2</option>
         <option value="customIcon3">Ícone 3</option>
