@@ -1,97 +1,70 @@
-# Teste para Desenvolvedor Fullstack - Kognita
+# Configuração do projeto
 
-## Informações gerais
+Certifique-se de ter o Node 16+ instalado e instale as dependências nas pastas `frontend`e `backend`
 
-1. Sobre o prazo de entrega: 1 semana (7 dias) a partir do recebimento do mesmo.
-2. Não é permitido compartilhar esse exercício com terceiros.
+```bash
+npm install --force
+```
 
+>Crie o arquivo `features.db` na pasta `backend/src/app/database`
+>Crie uma cópia do arquivo `.env.example`, renomeie para `.env` na pasta backend e preencha com os seguintes valores:
 
-## Objetivo do Teste
+```markdown
+NODE_ENV=development
+TZ='America/Sao_Paulo'
+OSM_API_URL=https://nominatim.openstreetmap.org
+```
 
-Criar uma aplicação web interativa com mapas que permita o usuário final visualizar e interagir com dados geoespaciais.
+Já para a pasta `frontend`, faça o mesmo e preencha o arquivo `.env` com os seguites valores:
 
----
+```markdown
+VITE_APP_API_URL=http://localhost:8080
+```
 
-## Instruções de Entrega
+## Executando a aplicação
 
-1. **Fork do Repositório Original**  
-   Crie um fork do repositório original para sua conta no GitHub. Isso permitirá que você trabalhe no projeto sem alterar o repositório principal.
+Instalado as dependências de cada projeto, execute os seguintes comandos nas respectivas pastas:
 
-2. **Desenvolvimento e Histórico de Commits**  
-   Realize todas as alterações e implementações diretamente no repositório forkeado. Certifique-se de manter um histórico de commits que demonstre o progresso e as decisões técnicas tomadas.
+- backend
 
-3. **Entrega Final**  
-   A entrega deve ser feita por meio do repositório "forkeado", contendo:  
-   - Um arquivo `README.md` com instruções claras sobre como configurar, rodar e testar a aplicação.
+  ```bash
+    npm run start:dev
+  ```
 
----
-
-## Passo a Passo para o Desenvolvimento
-
-1. **Configuração Inicial**  
-   - Escolha e configure as dependências necessárias para o projeto (ex.: React ou outro framework, Leaflet/Mapbox, Express).  
-   - Configure um servidor básico usando Node.js para servir a aplicação e processar chamadas à API.
+- frontend
   
-2. **Utilização das Bases de Dados**  
-   - Use os arquivos fornecidos na pasta `files` para adicionar pontos ao mapa.  
-   - Configure eventos para que, ao clicar ou passar o mouse sobre os marcadores, a informação de `censo_2022_domicilio_particular_poi_counts` seja exibida.  
+  ```bash
+    npm run dev
+  ```
 
-3. **Implementação do Mapa**  
-   - Exiba o mapa utilizando **Leaflet** ou **Mapbox**.  
-   - Implemente funcionalidades que permitam desenhar polígonos no mapa, e realizar e exibir o resultado de operações sobre a área demarcada para o usuário final. Operações: total de pontos, soma, média e mediana.
+## Interagindo com a aplicação
 
-4. **Integração com a API OpenStreetMap**  
-   - Adicione uma funcionalidade que permita que o usuário insira pinos ao clicar no mapa.  
-   - Para cada pino adicionado, consulte a API do OpenStreetMap com as coordenadas correspondentes.  
-   - Persista e exiba (quando possível) as informações retornadas ao clicar ou passar o mouse sobre os pinos.
-    - O ponto { lat: 40.748817, lon: -73.985428} tem o seguinte resultado: 
-        ```bash
-        {
-            "place_id": 123456,
-            "lat": "40.748817",
-            "lon": "-73.985428",
-            "display_name": "Empire State Building, New York, NY, USA",
-            "address": {
-                "building": "Empire State Building",
-                "city": "New York",
-                "state": "NY",
-                "country": "United States",
-                "postcode": "10118"
-            }
-        }
-        ```
+Esta é a tela inicial
 
-5. **Testes e Documentação**  
-   - Inclua testes básicos para validar o funcionamento das principais funcionalidades.  
-   - Documente todo o processo no `README.md`, incluindo como instalar dependências, rodar a aplicação e executar os testes.
+Alguns pontos do arquivo `base_jales_separado_virgula.csv` da pasta `files` são exibidos no mapa
 
----
+![Mapa](./assets/mapa.png)
 
-## Desafios Adicionais (Extras)
+### Inserindo pontos e polígonos no mapa
 
-Para destacar ainda mais suas habilidades, implemente uma ou mais das funcionalidades abaixo:
+Para inserir pontos e polígonos, utilize os controles no canto direito superior da aplicação
 
-1. **Autenticação JWT**  
-   - Implemente autenticação no backend utilizando **JSON Web Tokens (JWT)** para proteger as rotas.
+![Controles](./assets/controles.png)
 
-2. **Persistência de Dados**  
-   - Salve as consultas feitas pelo usuário em um banco de dados.  
-   - Armazene as operações realizadas, como o desenho de polígonos e adição de pinos, em um banco de dados local ou em memória.
+Para exibir apenas alguns tipos de marcadores no mapa, selecione o tipo no seletor no canto esquerdo inferior da aplicação. Aqui também é possível escolher o ícone do marcador que deseja inserir no mapa, no seletor logo acima.
 
-3. **Filtros e Edição de Pinos**  
-   - Adicione filtros que permitam exibir apenas determinados tipos de pontos da base de dados fake no mapa.  
-   - Implemente funcionalidades para editar ou remover pinos adicionados pelo usuário.
+![Marcadores](./assets/marcadores.png)
 
-4. **Testes Automatizados**  
-   - Adicione testes automatizados usando ferramentas como **Jest**, **Cypress** ou similares.
+No canto direito inferior da aplicação é possível ver algumas informações no mapa, como o número de pontos, a soma, a média a mediana das áreas dos polígonos
 
----
+![Stats](./assets/stats.png)
 
-## Critérios de Avaliação
+### Informações
 
-- **Organização do Código**: Qualidade, clareza e modularidade do código.  
-- **Funcionalidade**: Implementação correta e funcionalidade das features solicitadas.  
-- **Documentação**: Instruções claras no README e histórico de commits detalhado.  
-- **Extras**: Implementação dos desafios adicionais.  
+Ao clicar sobre os marcadores, são exibidas as informações correspondentes ao campo `censo_2022_domicilio_particular_poi_counts` do arquivo csv na pasta `files`:
 
-Boa sorte e divirta-se desenvolvendo! 🚀
+![Info Marcadores](./assets/info_marcadores.png)
+
+Ao criar marcadores no mapa, a aplicação consulta a API do OpenStreetMaps e, caso haja alguma informação sobre aquele ponto marcado, as informações também são exibidas:
+
+![Info OSM](./assets/info_osm.png)
