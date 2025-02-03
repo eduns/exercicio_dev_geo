@@ -2,12 +2,12 @@ import { Router, Request, Response } from 'express';
 
 import OSMApi from '../../services/osm-api';
 
-import PointsDatabase from '../../../interfaces/PointsDatabase';
+import FeaturesDatabase from '../../../interfaces/FeaturesDatabase';
 
 const router = Router();
 const osmApi = new OSMApi();
 
-const setupOSMRoutes = (pointsDb: PointsDatabase) => {
+const setupOSMRoutes = (featureDb: FeaturesDatabase) => {
   router.get('/info', (request: Request, response: Response) => {
     const { lat, lng } = request.query;
 
@@ -19,14 +19,14 @@ const setupOSMRoutes = (pointsDb: PointsDatabase) => {
     .catch(console.error);
   });
 
-  router.get('/points', async (request: Request, response: Response) => {
-    const points = await pointsDb.getPoints();
-    response.json(points);
+  router.get('/features', async (request: Request, response: Response) => {
+    const features = await featureDb.getFeatures();
+    response.json(features);
   });
 
-  router.post('/points', async (request: Request, response: Response) => {
+  router.post('/features', async (request: Request, response: Response) => {
     try {
-      await pointsDb.insertPoint(request.body)
+      await featureDb.insertFeature(request.body)
       response.status(201).send();
     } catch (error: any) {
       response.status(500).json({

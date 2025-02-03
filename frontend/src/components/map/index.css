@@ -20,7 +20,7 @@
   margin-top: 0.5em;
 }
 
-#polygon-stats {
+#features-stats {
   position: absolute;
   bottom: 1em;
   right: 0.3em;
@@ -33,7 +33,7 @@
   z-index: 1000;
 }
 
-#polygon-stats h2 {
+#features-stats h2 {
   color: #191717;
   text-align: center;
 }

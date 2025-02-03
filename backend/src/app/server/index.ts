@@ -3,12 +3,12 @@ import cors from 'cors';
 
 import setupOSMRoutes from './routes/osm';
 
-import InMemoryPointsDatabase from '../database/InMemoryPointsDatabase';
+import InMemoryFeaturesDatabase from '../database/InMemoryFeaturesDatabase';
 
 const server = express();
 
 server.use(cors());
 server.use(express.json());
-server.use('/osm', setupOSMRoutes(new InMemoryPointsDatabase()));
+server.use('/osm', setupOSMRoutes(new InMemoryFeaturesDatabase()));
 
 export default server;

@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, FeatureGroup, Marker, Popup, Polygon, useMap } from 'react-leaflet';
-import { type DrawEvents, Icon, LatLng, Popup as LPopup, Polygon as LPolygon, Layer, Map as LMap } from 'leaflet';
+import { Icon, Popup as LPopup, Polygon as LPolygon, Layer, Map as LMap, Marker as LMarker } from 'leaflet';
 import { EditControl } from 'react-leaflet-draw';
+
+import generateId from '../../utils/generateId';
 
 import customIcon1 from '../../assets/marker_01.png';
 import customIcon2 from '../../assets/marker_02.png';
@@ -16,27 +18,30 @@ type PolygonData = {
   pins: { lat: number; lng: number; }[];
   area: number;
   iconName: string;
-}
+  isShown: boolean;
+};
 
 type MarkerData = {
+  id: number;
   lat: number;
   lng: number;
   iconName: string;
-  domicilioParticularCount: number;
+  domicilioParticularCount?: number;
   info?: string;
-  isPolygon: boolean;
-  polygonCoordinates: { lat: number; lng: number }[]
-}
+  isShown: boolean;
+  createdFromControls: boolean;
+};
 
 type LayerData = {
+  id: number;
   layer: Layer,
   isShown: boolean;
   iconName: string;
-}
+  isPolygon: boolean;
+  createdFromControls: boolean;
+};
 
-const customIcons: {
-  [key: string]: Icon
-} = {
+const customIcons: Record<string, Icon> = {
   'customIcon1': new Icon({
     iconUrl: customIcon1,
     iconRetinaUrl: customIcon1,
@@ -75,35 +80,35 @@ const customIcons: {
   })
 };
 
-const fetchData = async (coordinates: { lat: number; lng: number; }) => {
+const fetchMarkerInfo = async (coordinates: { lat: number; lng: number; }) => {
   return fetch(`${process.env.VITE_APP_API_URL}/osm/info?lat=${coordinates.lat}&lng=${coordinates.lng}`, {
     headers: {
       'Content-Type': 'application/json;charset=UTF-8'
     }
   })
-    .then(response => response.json())
-    .catch(console.error);
+  .then(response => response.json())
+  .catch(console.error);
 }
 
-const fetchPoints = async () => {
-  return fetch(`${process.env.VITE_APP_API_URL}/osm/points`,
+const fetchFeatures = async () => {
+  return fetch(`${process.env.VITE_APP_API_URL}/osm/features`,
     {
       headers: {
         'Content-Type': 'application/json;charset=UTF-8'
       },
     }
   )
-    .then(response => response.json())
-    .catch(console.error);
+  .then(response => response.json())
+  .catch(console.error);
 }
 
-const insertPoint = (point: any) => {
-  fetch(`${process.env.VITE_APP_API_URL}/osm/points`, {
+const insertFeature  = (feature: any) => {
+  fetch(`${process.env.VITE_APP_API_URL}/osm/features`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json;charset=UTF-8'
     },
-    body: JSON.stringify(point)
+    body: JSON.stringify(feature)
   })
   .catch(console.error);
 }
@@ -115,14 +120,15 @@ export default function Map() {
     'customIcon1', 'customIcon2', 'customIcon3'
   ]);
   const [mapLayers, setMapLayers] = useState<LayerData[]>([]);
-  const mapRef = useRef<LMap>(null);
-  
   const [average, setAverage] = useState<number>(0);
   const [median, setMedian] = useState<number>(0);
   const [areaSum, setAreaSum] = useState<number>(0);
   const [totalPoints, setTotalPoints] = useState<number>(0);
   const [selectedIconName, setSelectedIconName] = useState<string>('customIcon1');
   const selectedIconNameRef = useRef<string>(selectedIconName);
+  const [hiddenFeaturesIds, setHiddenFeaturesIds] = useState<string[]>([]);
+  const isErasingRef = useRef<boolean>(false);
+  const mapRef = useRef<LMap>(null);
 
   const calcPolygonArea = (coordinates: { lat: number; lng: number }[]) => {
     const area = coordinates.reduce((prev, curr, idx) => {
@@ -153,43 +159,77 @@ export default function Map() {
 
     return values[middle];
   };
-  
-  const onCreated = async (evt: DrawEvents.Created) => {
-    const layer = evt.layer as any;
-    const isPoint = !!layer._latlng;
-    
-    if (isPoint) {
-      const coordinates = (evt.layer as any)._latlng;
-      
-      const data = await fetchData(coordinates);
 
-      if (data) {
-        data.display_name && evt.layer.bindPopup(new LPopup({ content: `
-          <h2>Dados</h2>
-          <hr />
-          <p>${data.display_name}</p>
-        `}));
-      }
+  const onCreated = async (evt: any) => {
+    const layer = evt.layer;
+    const isPolygon = !!layer._latlngs;
+    const featureId = generateId();
 
-      insertPoint({
-        lat: coordinates.lat,
-        lng: coordinates.lng,
-        info: data?.display_name || null,
-        iconName: selectedIconNameRef.current
+    if (isPolygon) {
+      evt.layer.bindPopup(new LPopup({
+        content: `
+        <h2>Dados</h2>
+        <p>TESTE POLIGONO</p>
+        <hr />`
+      }));
+
+      setPolygons(storedPolygons => (
+        [
+          ...storedPolygons,
+          {
+            id: featureId,
+            pins: layer._latlngs[0],
+            area: calcPolygonArea(layer._latlngs[0]),
+            iconName: 'pinPolygon',
+            isShown: true,
+          }
+        ]
+      ));
+
+      insertFeature({
+        iconName: 'polygonPin',
+        isPolygon: true,
+        polygonCoordinates: layer._latlngs[0]
       });
     } else {
-      evt.layer.bindPopup(new LPopup({ content: 'TESTE' }));
+      const info = await fetchMarkerInfo({
+        lat: layer._latlng.lat,
+        lng: layer._latlng.lng
+      });
 
-      const [polygonLatLngs] = layer._latlngs;
+      if (info) {
+        evt.layer.bindPopup(new LPopup({ content: `
+          <h2>Dados</h2>
+          <hr />
+          <p>${info.display_name}</p>
+          `
+        }));
+      }
 
-      insertPoint({
-        isPolygon: true,
-        iconName: 'polygonPin',
-        polygonCoordinates: polygonLatLngs
-      })
+      insertFeature({
+        lat: layer._latlng.lat,
+        lng: layer._latlng.lng,
+        info: info?.display_name || null,
+        iconName: selectedIconNameRef.current,
+        isPolygon: false
+      });
     }
+
+    setMapLayers(storedMapLayers => (
+      [
+        ...storedMapLayers,
+        {
+          id: featureId,
+          layer,
+          isPolygon,
+          iconName: selectedIconNameRef.current,
+          isShown: true,
+          createdFromControls: true
+        }
+      ]
+    ));
   }
-  
+
   const onIconChange = (evt: any) => {
     setSelectedIconName(() => {
       selectedIconNameRef.current = evt.target.value;
@@ -202,41 +242,166 @@ export default function Map() {
   }
   
   useEffect(() => {
-    try {
-      fetchPoints()
-        .then(allPoints => {
-          setMarkers(
-            allPoints.map((p: any) => {
-              return {
-                lat: p.lat,
-                lng: p.lng,
-                iconName: p.iconName,
-                info: p.info,
-                isPolygon: !!p.isPolygon,
-                ...(!p.isPolygon && { domicilioParticularCount: p.domicilioParticularCount }),
-                ...(p.isPolygon && { polygonCoordinates: p.polygonCoordinates.split('|').map((pc: any) => {
-                  const [lat, lng] = pc.split(',');
-    
-                  return {
-                    lat: parseFloat(lat),
-                    lng: parseFloat(lng)
-                  }
-                })})
-              }
+    fetchFeatures()
+    .then(allFeatures => {
+      if (allFeatures) {
+        const features = allFeatures.map((p: any) => {
+          return {
+            id: p.id,
+            lat: p.lat,
+            lng: p.lng,
+            iconName: p.iconName,
+            info: p.info,
+            isPolygon: !!p.isPolygon,
+            ...(!p.isPolygon && { domicilioParticularCount: p.domicilioParticularCount }),
+            ...(p.isPolygon && {
+              polygonCoordinates: p.polygonCoordinates.split('|').map((pc: any) => {
+                const [lat, lng] = pc.split(',');
+                
+                return {
+                  lat: parseFloat(lat),
+                  lng: parseFloat(lng),
+                }
+              })
             })
-          )
-        })
-        .catch(console.error);
+          };
+        });
 
-    } catch (error) {
-      console.log('[FETCH_POINTS] Erro:', error);
-    }
+        const pols: PolygonData[] = [];
+        const mks: MarkerData[] = [];
+        const lds: LayerData[] = [];
+
+        features.forEach((f: any) => {
+          let layer;
+
+          if (f.isPolygon) {
+            const lp = new LPolygon(f.polygonCoordinates, {
+              color: '#97009c',
+            });
+
+            layer = lp;
+
+            pols.push({
+              id: f.id,
+              area: calcPolygonArea(f.polygonCoordinates),
+              iconName: f.iconName,
+              pins: f.polygonCoordinates,
+              isShown: true
+            });
+
+            lds.push({
+              id: f.id,
+              iconName: f.iconName,
+              isShown: true,
+              layer: lp,
+              isPolygon: true,
+              createdFromControls: false
+            });
+          } else {
+            const l = new LMarker([f.lat, f.lng], {
+              icon: f.iconName ? customIcons[f.iconName] : customIcons.customIcon1
+            });
+
+            l.bindPopup(new LPopup({
+              content: `
+                <p><b>Total de Domicílios:</b> ${f.domicilioParticularCount}</p>
+                <hr />`
+            }));
+
+            layer = l;
+
+            mks.push({
+              id: f.id,
+              lat: parseFloat(f.lat),
+              lng: parseFloat(f.lng),
+              domicilioParticularCount: f.domicilioParticularCount,
+              iconName: f.iconName,
+              isShown: true,
+              createdFromControls: false
+            });
+
+            lds.push({
+              id: f.id,
+              iconName: f.iconName,
+              isShown: true,
+              layer: l,
+              isPolygon: false,
+              createdFromControls: false
+            });
+          }
+        });
+        
+        setPolygons(storedPolygons => (
+          [
+            ...storedPolygons,
+            ...pols
+          ]
+        ));
+        
+        setMarkers(storedMarkers => (
+          [
+            ...storedMarkers,
+            ...mks
+          ]
+        ));
+
+        setMapLayers(
+          lds.map(m => ({
+            id: m.id,
+            layer: m.layer,
+            iconName: m.iconName,
+            isShown: m.isShown,
+            isPolygon: m.isPolygon,
+            createdFromControls: false
+          }))
+        );
+      }
+    })
+    .catch(error => {
+      console.log('[FETCH_FEATURES] Erro:', error);
+    });
   }, []);
 
   useEffect(() => {
+    const visibleMarkersIds: number[] = [];
+    const hiddenFIds: string[] = [];
+
+    setMapLayers(storedMapLayers => {
+      const mm = storedMapLayers.map(ml => {
+        const layer = (ml.layer as any);
+        const isPolygon = !!layer._latlngs;
+
+        if (isPolygon) return ml;
+        
+        if (!selectedMarkerTypes.includes(ml.iconName)) {
+          hiddenFeaturesIds.push(`${layer._latlng.lat},${layer._latlng.lng}`);
+          ml.isShown = false;
+          ml.createdFromControls && mapRef.current!.removeLayer(ml.layer);
+        } else {
+          ml.isShown = true;
+          visibleMarkersIds.push(ml.id);
+          ml.createdFromControls && !mapRef.current!.hasLayer(ml.layer) && mapRef.current!.addLayer(ml.layer);
+        }
+  
+        return ml;
+      });
+
+      setHiddenFeaturesIds(hiddenFIds);
+
+      setMarkers(markers.map(m => ({
+        ...m,
+        isShown: visibleMarkersIds.includes(m.id)
+      })));
+
+      return [...mm];
+    });
+
+  }, [selectedMarkerTypes]);
+
+  useEffect(() => {
     const mapLayerCount = mapLayers.reduce((prev, curr) => {
-      const layer = (curr.layer as any);
-      const isPolygon = !!layer._latlngs;
+    const layer = curr.layer as any;
+    const isPolygon = !!layer._latlngs;
 
       return prev + (isPolygon ? layer._latlngs[0].length : 1);
     }, 0);
@@ -244,32 +409,10 @@ export default function Map() {
     setAreaSum(polygons.reduce((prev, curr) => prev + curr.area, 0))
     setAverage(calcAverage(polygons));
     setMedian(calcMedian(polygons));
-  }, [mapLayers, markers, polygons]);
+  }, [mapLayers, polygons]);
 
-  useEffect(() => {
-    setMapLayers(storedMapLayers => {
-      return storedMapLayers.map(ml => {
-        const isPoint = !!(ml.layer as any)._latlng;
-  
-        if (isPoint) {
-          if (!selectedMarkerTypes.includes(ml.iconName)) {
-            ml.isShown && mapRef.current!.removeLayer(ml.layer);
-            ml.isShown = false;
-          } else {
-            !ml.isShown && mapRef.current!.addLayer(ml.layer);
-            ml.isShown = true;
-          }
-        }
-  
-        return ml;
-      });
-    });
-
-  }, [selectedMarkerTypes]);
-
-  const IconMapFilter = () => {
-    const map = useMap();
-    mapRef.current = map; 
+  function IconMapFilter () {
+    mapRef.current = useMap(); 
 
     return null;
   }
@@ -280,67 +423,85 @@ export default function Map() {
       center={[-20.314203858242326, -50.55221557617188]}
 			zoom={13}
 		>
+      <IconMapFilter />
 			<TileLayer
 				url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 				attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 			/>
       <FeatureGroup
         eventHandlers={{
-          layeradd: (evt) => {
-            const layer = evt.layer as any;
-            const isPolygon = !!layer._latlngs;
-
-            if (isPolygon) {
-              setPolygons(storedPolygons => {
-                const polygonLatLngs = (layer as LPolygon).getLatLngs()[0] as LatLng[];
-        
-                return [
-                  ...storedPolygons, {
-                    id: layer._leaflet_id,
-                    pins: polygonLatLngs,
-                    area: calcPolygonArea(polygonLatLngs),
-                    iconName: 'pinPolygon',
-                  }
-                ];
-              });
-            }
-
-            setMapLayers(storedMapLayers => [...storedMapLayers, {
-              layer: evt.layer,
-              isShown: true,
-              iconName: selectedIconNameRef.current
-            }]);
-          },
           layerremove: (evt) => {
             const layer = (evt.layer as any);
             const isPolygon = !!layer._latlngs;
-
+            let layerId;
+            
             if (isPolygon) {
+              layerId = layer._latlngs[0].map(l => `${l.lat},${l.lng}`).join('|');
+
+              if (hiddenFeaturesIds.includes(layerId)) return;
+
               setPolygons(storedPolygons => {
-                const remainingPolygons = storedPolygons.filter((p) => p.id !== layer._leaflet_id);
-      
+                const remainingPolygons = storedPolygons.filter((p) => {
+                  return p.pins.map(l => `${l.lat},${l.lng}`).join('|') !== layerId;
+                });
+                
                 return [...remainingPolygons];
+              });
+            } else {
+              layerId = `${layer._latlng.lat},${layer._latlng.lng}`;
+
+              if (!isErasingRef.current && !hiddenFeaturesIds.length || hiddenFeaturesIds.includes(layerId)) return;
+
+              setMarkers(storedMarkers => {
+                const remainingMarkers = storedMarkers.filter(m => `${m.lat},${m.lng}` !== layerId);
+
+                return [...remainingMarkers];
               });
             }
 
             setMapLayers(storedMapLayers => {
-              const remainingMapLayers = storedMapLayers.filter(ml => (ml.layer as any)._leaflet_id !==  layer._leaflet_id);
+              const layerIdsToRemove: string[] = [];
+              const remainingMapLayers = storedMapLayers.filter(ml => {
+                const l = ml.layer as any;
+                let mLayerId;
+                
+                if (ml.isPolygon) {
+                  mLayerId = l._latlngs[0].map(c => `${c.lat},${c.lng}`).join('|');
+                } else {
+                  mLayerId = `${l._latlng.lat},${l._latlng.lng}`;
+                }
+
+                if (layerId === mLayerId) {
+                  layerIdsToRemove.push(layerId);
+                  ml.createdFromControls && mapRef.current!.removeLayer(evt.layer);
+                }
+
+                return mLayerId !== layerId;
+              });
+
+              setHiddenFeaturesIds(hiddenFeaturesIds.filter(s => !layerIdsToRemove.includes(s)));
 
               return [...remainingMapLayers];
             });
-          },
+          }
         }}
       >
         <EditControl
           position='topright'
           onCreated={onCreated}
+          onDeleteStart={() => {
+            isErasingRef.current = true;
+          }}
+          onDeleteStop={() => {
+            isErasingRef.current = false;
+          }}
           draw={{
             rectangle: false,
             circle: false,
             polyline: false,
             circlemarker: false,
             marker: {
-              icon: customIcons[selectedIconName]
+              icon: customIcons[selectedIconName],
             },
             polygon: {
               allowIntersection: false,
@@ -353,47 +514,44 @@ export default function Map() {
                 color: '#97009c',
               },
               metric: true,
-              icon: customIcons['pinPolygon']
+              icon: customIcons.pinPolygon
             },
           }}
         />
-        {markers.map((marker, idx) => (
-          marker.isPolygon ? (
-            <Polygon
+        {polygons.map((p, idx) => (
+          <Polygon
+            key={idx}
+            positions={p.pins.map(pc => [pc.lat, pc.lng])}
+            color='#97009c'
+          >
+            <Popup>TESTE POLÍGONO</Popup>
+          </Polygon>
+        ))}
+        {markers.map((m, idx) => (
+          m.isShown && !m.createdFromControls && <Marker
               key={idx}
-              positions={marker.polygonCoordinates.map(pc => [pc.lat, pc.lng])}
-              color='#97009c'
+              position={[m.lat, m.lng]}
+              icon={customIcons[m.iconName]}
             >
-              <Popup>
-                TESTE
-              </Popup>
-            </Polygon>
-          ) : (
-            <Marker
-              key={idx}
-              position={[marker.lat, marker.lng]}
-              icon={customIcons[marker.iconName]}
-            >
-              {marker.domicilioParticularCount && (
+              {m.domicilioParticularCount !== null && (
                 <Popup>
-                  <p><b>Total de Domicílios:</b> {marker.domicilioParticularCount}</p>
+                  <p><b>Total de Domicílios:</b> {m.domicilioParticularCount}</p>
                   <hr />
                 </Popup>
               )}
-              {marker.info && (
+              {m.info && (
                 <Popup>
                   <h2>Dados</h2>
                   <hr />
-                  <p>{marker.info}</p>
+                  <p>{m.info}</p>
                 </Popup>
               )}
             </Marker>
           )
-        ))}
-        <IconMapFilter />
+        )}
       </FeatureGroup>
 		</MapContainer>
-    <div id="polygon-stats">
+    <div id="features-stats">
       <h2>Informações</h2>
       <hr />
       <p>Total de pontos: {totalPoints}</p>
@@ -402,7 +560,7 @@ export default function Map() {
       <p>Mediana das áreas: {median.toFixed(4)}</p>
     </div>
     <div id="selector-box">
-      <label htmlFor="selectedIcon">Selecione um ícone do marcador: </label>
+      <label htmlFor="selectedIcon">Selecione um ícone do marcador:</label>
       <select name="selectedIcon" value={selectedIconName} onChange={onIconChange}>
         <option value="customIcon1">Ícone 1</option>
         <option value="customIcon2">Ícone 2</option>

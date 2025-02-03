@@ -1,4 +1,5 @@
-export type PointData = {
+export type FeatureData = {
+  id: number;
   lat: number;
   lng: number;
   estabelecimentoFinalidadesCount: number;
@@ -11,7 +12,8 @@ export type PointData = {
   estabelecimentoAgroCount: number;
 }
 
-export type InsertPointData = {
+export type InsertFeatureData = {
+  id: number;
   lat?: number;
   lng?: number;
   info: string | null;
@@ -20,7 +22,7 @@ export type InsertPointData = {
   polygonCoordinates?: { lat: number, lng: number }[];
 }
 
-export default interface PointsDatabase {
-  getPoints (): Promise<PointData[]>;
-  insertPoint (point: InsertPointData): Promise<void>;
+export default interface FeaturesDatabase {
+  getFeatures (): Promise<FeatureData[]>;
+  insertFeature (point: InsertFeatureData): Promise<void>;
 }
